@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { REFUND_REASONS, REFUND_STATUSES, humanise } from '../types';
 import type { RefundFilters, RefundReason, RefundStatus } from '../types';
 
@@ -37,12 +37,6 @@ export function FiltersBar({ filters, onChange, onReset }: Props) {
     to: null,
   });
 
-  // A native date input reports a value as soon as the segment being typed is
-  // full, so `20` arrives as `02` first. Keyboard edits are therefore applied
-  // when the field is left (or on Enter); a change with no keystroke behind it
-  // came from the calendar widget and is applied straight away.
-  const typing = useRef(false);
-
   useEffect(() => {
     setDates({ from: filters.dateFrom, to: filters.dateTo });
     setErrors({ from: null, to: null });
@@ -61,29 +55,23 @@ export function FiltersBar({ filters, onChange, onReset }: Props) {
     return outOfOrder ? 'The start date must be on or before the end date.' : null;
   }
 
-  function commit(field: 'from' | 'to', value: string) {
-    const current = field === 'from' ? filters.dateFrom : filters.dateTo;
-    if (value === current) return;
-    onChange(field === 'from' ? { dateFrom: value, page: 1 } : { dateTo: value, page: 1 });
+  const datesDirty = dates.from !== filters.dateFrom || dates.to !== filters.dateTo;
+  const datesValid = !errors.from && !errors.to;
+
+  function applyDates() {
+    if (!datesDirty || !datesValid) return;
+    onChange({ dateFrom: dates.from, dateTo: dates.to, page: 1 });
   }
 
+  /**
+   * A date field is never applied while it is being edited: a native date input
+   * reports a value as soon as the segment being typed is full (`20` arrives as
+   * `02`), and the calendar widget emits one on every month step. Changes are
+   * applied when the field is left, on Enter, or from the Apply dates button.
+   */
   function changeDate(field: 'from' | 'to', value: string) {
     setDates((current) => ({ ...current, [field]: value }));
-    const message = errorFor(field, value);
-    setErrors((current) => ({ ...current, [field]: message }));
-
-    if (!message && !typing.current) {
-      commit(field, value);
-    }
-  }
-
-  /** Applies the field's value, if it is usable. Called on blur and on Enter. */
-  function applyDate(field: 'from' | 'to') {
-    typing.current = false;
-    const value = dates[field];
-    if (!errorFor(field, value)) {
-      commit(field, value);
-    }
+    setErrors((current) => ({ ...current, [field]: errorFor(field, value) }));
   }
 
   return (
@@ -98,11 +86,8 @@ export function FiltersBar({ filters, onChange, onReset }: Props) {
             value={dates.from}
             aria-invalid={errors.from ? true : undefined}
             onChange={(event) => changeDate('from', event.target.value)}
-            onBlur={() => applyDate('from')}
-            onKeyDown={(event) => {
-              typing.current = true;
-              if (event.key === 'Enter') applyDate('from');
-            }}
+            onBlur={applyDates}
+            onKeyDown={(event) => event.key === 'Enter' && applyDates()}
           />
           {errors.from && <span className="field-error">{errors.from}</span>}
         </label>
@@ -115,14 +100,16 @@ export function FiltersBar({ filters, onChange, onReset }: Props) {
             value={dates.to}
             aria-invalid={errors.to ? true : undefined}
             onChange={(event) => changeDate('to', event.target.value)}
-            onBlur={() => applyDate('to')}
-            onKeyDown={(event) => {
-              typing.current = true;
-              if (event.key === 'Enter') applyDate('to');
-            }}
+            onBlur={applyDates}
+            onKeyDown={(event) => event.key === 'Enter' && applyDates()}
           />
           {errors.to && <span className="field-error">{errors.to}</span>}
         </label>
+        {datesDirty && (
+          <button type="button" className="button" disabled={!datesValid} onClick={applyDates}>
+            Apply dates
+          </button>
+        )}
         <label>
           Min amount
           <input

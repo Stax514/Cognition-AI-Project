@@ -300,6 +300,16 @@ label.checkbox {
   font-size: 14px;
 }
 
+.field-error {
+  color: var(--danger);
+  font-size: 12px;
+  max-width: 200px;
+}
+
+input[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+
 .notice {
   background: #fff8e6;
   border: 1px solid #f0dcae;

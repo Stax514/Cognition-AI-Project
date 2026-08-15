@@ -4,6 +4,7 @@ import session from 'express-session';
 import { config, isProduction } from './config.js';
 import { errorHandler, notFound } from './middleware/errors.js';
 import { requireAuth } from './middleware/auth.js';
+import { requireCsrfToken } from './middleware/csrf.js';
 import { authRouter } from './routes/auth.js';
 import { refundsRouter } from './routes/refunds.js';
 import './types.js';
@@ -39,6 +40,7 @@ export function createApp() {
   // Everything below this line requires a session; each router additionally
   // declares the role it needs, so a new route is never accidentally public.
   app.use('/api', requireAuth);
+  app.use('/api', requireCsrfToken);
   app.use('/api/refunds', refundsRouter);
 
   app.use(notFound);

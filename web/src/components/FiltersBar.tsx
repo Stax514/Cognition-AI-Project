@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { REFUND_REASONS, REFUND_STATUSES, humanise } from '../types';
 import type { RefundFilters, RefundReason, RefundStatus } from '../types';
 
@@ -7,13 +8,58 @@ interface Props {
   onReset: () => void;
 }
 
+// Typing into a native date input can produce years like 275760, which the API
+// rejects with a generic error. Bound the field and check it here instead.
+const MIN_DATE = '2000-01-01';
+const MAX_DATE = new Date().toISOString().slice(0, 10);
+
+function dateError(value: string): string | null {
+  if (!value) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || Number.isNaN(Date.parse(value))) {
+    return 'Enter a date as YYYY-MM-DD.';
+  }
+  if (value < MIN_DATE || value > MAX_DATE) {
+    return `Enter a date between ${MIN_DATE} and ${MAX_DATE}.`;
+  }
+  return null;
+}
+
 /**
  * All filtering happens on the server; this component only collects the values
  * and pushes them into the query string.
  */
 export function FiltersBar({ filters, onChange, onReset }: Props) {
+  // The raw text is held locally so a half-typed date can stay on screen
+  // without being sent to the server.
+  const [dates, setDates] = useState({ from: filters.dateFrom, to: filters.dateTo });
+  const [errors, setErrors] = useState<{ from: string | null; to: string | null }>({
+    from: null,
+    to: null,
+  });
+
+  useEffect(() => {
+    setDates({ from: filters.dateFrom, to: filters.dateTo });
+    setErrors({ from: null, to: null });
+  }, [filters.dateFrom, filters.dateTo]);
+
   function toggle<T extends string>(list: T[], value: T): T[] {
     return list.includes(value) ? list.filter((item) => item !== value) : [...list, value];
+  }
+
+  function changeDate(field: 'from' | 'to', value: string) {
+    setDates((current) => ({ ...current, [field]: value }));
+
+    const own = dateError(value);
+    const other = field === 'from' ? dates.to : dates.from;
+    const ordered = !own && !dateError(other) && other
+      ? (field === 'from' ? value > other : value < other)
+      : false;
+    const message = own ?? (ordered ? 'The start date must be on or before the end date.' : null);
+
+    setErrors((current) => ({ ...current, [field]: message }));
+    if (!message) {
+      onChange(field === 'from' ? { dateFrom: value, page: 1 } : { dateTo: value, page: 1 });
+    }
   }
 
   return (
@@ -23,17 +69,25 @@ export function FiltersBar({ filters, onChange, onReset }: Props) {
           Created from
           <input
             type="date"
-            value={filters.dateFrom}
-            onChange={(event) => onChange({ dateFrom: event.target.value, page: 1 })}
+            min={MIN_DATE}
+            max={MAX_DATE}
+            value={dates.from}
+            aria-invalid={errors.from ? true : undefined}
+            onChange={(event) => changeDate('from', event.target.value)}
           />
+          {errors.from && <span className="field-error">{errors.from}</span>}
         </label>
         <label>
           Created to
           <input
             type="date"
-            value={filters.dateTo}
-            onChange={(event) => onChange({ dateTo: event.target.value, page: 1 })}
+            min={MIN_DATE}
+            max={MAX_DATE}
+            value={dates.to}
+            aria-invalid={errors.to ? true : undefined}
+            onChange={(event) => changeDate('to', event.target.value)}
           />
+          {errors.to && <span className="field-error">{errors.to}</span>}
         </label>
         <label>
           Min amount

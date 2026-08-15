@@ -17,11 +17,19 @@ export class ApiError extends Error {
   }
 }
 
+// Kept in memory only: the server hands it back on login and on /auth/me, so a
+// reload recovers it and no other origin can read it.
+let csrfToken = '';
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const headers: Record<string, string> = {};
+  if (init.body) headers['Content-Type'] = 'application/json';
+  if (init.method && init.method !== 'GET') headers['X-CSRF-Token'] = csrfToken;
+
   const response = await fetch(`/api${path}`, {
     credentials: 'include',
-    headers: init.body ? { 'Content-Type': 'application/json' } : undefined,
     ...init,
+    headers: { ...headers, ...init.headers },
   });
 
   if (response.status === 204) {
@@ -50,14 +58,23 @@ export function buildRefundQuery(filters: RefundFilters): string {
   return params.toString();
 }
 
+async function authenticate(path: string, init?: RequestInit): Promise<{ user: User }> {
+  const body = await request<{ user: User; csrfToken: string }>(path, init);
+  csrfToken = body.csrfToken;
+  return { user: body.user };
+}
+
 export const api = {
-  me: () => request<{ user: User }>('/auth/me'),
+  me: () => authenticate('/auth/me'),
   login: (email: string, password: string) =>
-    request<{ user: User }>('/auth/login', {
+    authenticate('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
     }),
-  logout: () => request<void>('/auth/logout', { method: 'POST' }),
+  logout: async () => {
+    await request<void>('/auth/logout', { method: 'POST' });
+    csrfToken = '';
+  },
 
   listRefunds: (filters: RefundFilters) =>
     request<Paginated<Refund>>(`/refunds?${buildRefundQuery(filters)}`),

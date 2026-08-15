@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs';
 import { query } from '../db.js';
 import { clientIp } from '../http.js';
 import { currentUser, requireAuth } from '../middleware/auth.js';
+import { csrfToken, issueCsrfToken, requireCsrfToken } from '../middleware/csrf.js';
 import { HttpError } from '../middleware/errors.js';
 import { parsed, validate } from '../middleware/validate.js';
 import { recordAudit } from '../services/audit.js';
@@ -41,8 +42,9 @@ authRouter.post('/login', validate('body', loginSchema), async (req, res, next) 
         return;
       }
       req.session.user = { id: user.id, email: user.email, name: user.name, role: user.role };
+      const token = issueCsrfToken(req);
       recordAudit({ actorUserId: user.id, action: 'auth.login', ip: clientIp(req) }).then(
-        () => res.json({ user: req.session.user }),
+        () => res.json({ user: req.session.user, csrfToken: token }),
         next,
       );
     });
@@ -51,7 +53,7 @@ authRouter.post('/login', validate('body', loginSchema), async (req, res, next) 
   }
 });
 
-authRouter.post('/logout', requireAuth, async (req, res, next) => {
+authRouter.post('/logout', requireAuth, requireCsrfToken, async (req, res, next) => {
   try {
     const user = currentUser(req);
     await recordAudit({ actorUserId: user.id, action: 'auth.logout', ip: clientIp(req) });
@@ -68,6 +70,8 @@ authRouter.post('/logout', requireAuth, async (req, res, next) => {
   }
 });
 
+// Returns the CSRF token too, so a page reload can restore it without the
+// frontend ever having to store it outside memory.
 authRouter.get('/me', requireAuth, (req, res) => {
-  res.json({ user: currentUser(req) });
+  res.json({ user: currentUser(req), csrfToken: csrfToken(req) });
 });

@@ -184,6 +184,12 @@ address recorded against it by sending `X-Forwarded-For`.
 non-rejected refunds already raised against it, so a payment cannot be refunded
 for more than it was worth, even under concurrent requests.
 
+**CSRF.** The session cookie is `sameSite: 'lax'` and CORS allows a single
+origin, and on top of that every non-GET request under `/api` must echo the
+session's CSRF token in an `X-CSRF-Token` header. The token is issued at login,
+returned again by `GET /api/auth/me` so a reload can recover it, and held only
+in memory by the frontend — a cross-site page cannot read it.
+
 **Injection.** Every query is parameterized; filters are assembled as `$n`
 placeholders and the only interpolated fragment is the sort column, taken from
 a fixed whitelist.
@@ -205,8 +211,6 @@ dummy hash for unknown emails so timing does not reveal which accounts exist.
 - Sessions are held in the default in-memory store, so restarting the API logs
   everyone out and the API cannot be run as more than one process. Use
   `connect-pg-simple` or Redis for anything real.
-- No CSRF token. `sameSite=lax` plus a JSON-only API covers the common cases,
-  but a state-changing form post from another origin is not defended in depth.
 - No rate limiting or lockout on login, and all seeded users share a known
   development password.
 - The audit log is append-only by grants and a trigger, but is not

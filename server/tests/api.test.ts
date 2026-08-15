@@ -13,6 +13,8 @@ async function login(email: string): Promise<TestAgent> {
     .post('/api/auth/login')
     .send({ email, password: config.seedPassword });
   expect(response.status).toBe(200);
+  // Every state-changing request has to echo the session's CSRF token.
+  agent.set('X-CSRF-Token', response.body.csrfToken);
   return agent;
 }
 
@@ -34,6 +36,30 @@ describe('authentication', () => {
 
   it('rejects malformed credentials before touching the database', async () => {
     await request(app).post('/api/auth/login').send({ email: 'not-an-email' }).expect(400);
+  });
+
+  it('rejects state-changing requests without a valid CSRF token', async () => {
+    const agent = request.agent(app);
+    const login = await agent
+      .post('/api/auth/login')
+      .send({ email: 'approver@example.com', password: config.seedPassword })
+      .expect(200);
+    expect(login.body.csrfToken).toMatch(/^[0-9a-f]{64}$/);
+
+    const pending = await firstPendingRefundId();
+    const body = { comment: 'Approving without a token.' };
+    await agent.post(`/api/refunds/${pending}/approve`).send(body).expect(403);
+    await agent
+      .post(`/api/refunds/${pending}/approve`)
+      .set('X-CSRF-Token', 'a'.repeat(64))
+      .send(body)
+      .expect(403);
+    await agent.post('/api/auth/logout').expect(403);
+
+    // Reads are unaffected, and the refund is untouched.
+    await agent.get('/api/refunds').expect(200);
+    const refund = await query<{ status: string }>('SELECT status FROM refunds WHERE id = $1', [pending]);
+    expect(refund.rows[0]?.status).toBe('pending');
   });
 
   it('requires a session for every /api route', async () => {

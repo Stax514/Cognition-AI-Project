@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import type { FocusEvent } from 'react';
 import { REFUND_REASONS, REFUND_STATUSES, humanise } from '../types';
 import type { RefundFilters, RefundReason, RefundStatus } from '../types';
 
@@ -12,6 +13,11 @@ interface Props {
 // rejects with a generic error. Bound the field and check it here instead.
 const MIN_DATE = '2000-01-01';
 const MAX_DATE = new Date().toISOString().slice(0, 10);
+
+function rangeError(dates: { from: string; to: string }): string | null {
+  if (!dates.from || !dates.to || dateError(dates.to)) return null;
+  return dates.from > dates.to ? 'The start date must be on or before the end date.' : null;
+}
 
 function dateError(value: string): string | null {
   if (!value) return null;
@@ -32,28 +38,21 @@ export function FiltersBar({ filters, onChange, onReset }: Props) {
   // The raw text is held locally so a half-typed date can stay on screen
   // without being sent to the server.
   const [dates, setDates] = useState({ from: filters.dateFrom, to: filters.dateTo });
-  const [errors, setErrors] = useState<{ from: string | null; to: string | null }>({
-    from: null,
-    to: null,
-  });
 
   useEffect(() => {
     setDates({ from: filters.dateFrom, to: filters.dateTo });
-    setErrors({ from: null, to: null });
   }, [filters.dateFrom, filters.dateTo]);
 
   function toggle<T extends string>(list: T[], value: T): T[] {
     return list.includes(value) ? list.filter((item) => item !== value) : [...list, value];
   }
 
-  function errorFor(field: 'from' | 'to', value: string): string | null {
-    const own = dateError(value);
-    if (own) return own;
-    const other = field === 'from' ? dates.to : dates.from;
-    if (!value || !other || dateError(other)) return null;
-    const outOfOrder = field === 'from' ? value > other : value < other;
-    return outOfOrder ? 'The start date must be on or before the end date.' : null;
-  }
+  // Derived from the current pair so correcting either field clears the
+  // out-of-order message on the other one.
+  const errors = {
+    from: dateError(dates.from) ?? rangeError(dates),
+    to: dateError(dates.to),
+  };
 
   const datesDirty = dates.from !== filters.dateFrom || dates.to !== filters.dateTo;
   const datesValid = !errors.from && !errors.to;
@@ -61,6 +60,14 @@ export function FiltersBar({ filters, onChange, onReset }: Props) {
   function applyDates() {
     if (!datesDirty || !datesValid) return;
     onChange({ dateFrom: dates.from, dateTo: dates.to, page: 1 });
+  }
+
+  // Moving between the two date fields, or on to Apply dates, is still one
+  // edit: only leaving the group applies the range.
+  function blurDates(event: FocusEvent<HTMLInputElement>) {
+    const next = event.relatedTarget as HTMLElement | null;
+    if (next?.closest('.date-fields')) return;
+    applyDates();
   }
 
   /**
@@ -71,45 +78,46 @@ export function FiltersBar({ filters, onChange, onReset }: Props) {
    */
   function changeDate(field: 'from' | 'to', value: string) {
     setDates((current) => ({ ...current, [field]: value }));
-    setErrors((current) => ({ ...current, [field]: errorFor(field, value) }));
   }
 
   return (
     <section className="card filters">
       <div className="filter-row">
-        <label>
-          Created from
-          <input
-            type="date"
-            min={MIN_DATE}
-            max={MAX_DATE}
-            value={dates.from}
-            aria-invalid={errors.from ? true : undefined}
-            onChange={(event) => changeDate('from', event.target.value)}
-            onBlur={applyDates}
-            onKeyDown={(event) => event.key === 'Enter' && applyDates()}
-          />
-          {errors.from && <span className="field-error">{errors.from}</span>}
-        </label>
-        <label>
-          Created to
-          <input
-            type="date"
-            min={MIN_DATE}
-            max={MAX_DATE}
-            value={dates.to}
-            aria-invalid={errors.to ? true : undefined}
-            onChange={(event) => changeDate('to', event.target.value)}
-            onBlur={applyDates}
-            onKeyDown={(event) => event.key === 'Enter' && applyDates()}
-          />
-          {errors.to && <span className="field-error">{errors.to}</span>}
-        </label>
-        {datesDirty && (
-          <button type="button" className="button" disabled={!datesValid} onClick={applyDates}>
-            Apply dates
-          </button>
-        )}
+        <div className="date-fields">
+          <label>
+            Created from
+            <input
+              type="date"
+              min={MIN_DATE}
+              max={MAX_DATE}
+              value={dates.from}
+              aria-invalid={errors.from ? true : undefined}
+              onChange={(event) => changeDate('from', event.target.value)}
+              onBlur={blurDates}
+              onKeyDown={(event) => event.key === 'Enter' && applyDates()}
+            />
+            {errors.from && <span className="field-error">{errors.from}</span>}
+          </label>
+          <label>
+            Created to
+            <input
+              type="date"
+              min={MIN_DATE}
+              max={MAX_DATE}
+              value={dates.to}
+              aria-invalid={errors.to ? true : undefined}
+              onChange={(event) => changeDate('to', event.target.value)}
+              onBlur={blurDates}
+              onKeyDown={(event) => event.key === 'Enter' && applyDates()}
+            />
+            {errors.to && <span className="field-error">{errors.to}</span>}
+          </label>
+          {datesDirty && (
+            <button type="button" className="button" disabled={!datesValid} onClick={applyDates}>
+              Apply dates
+            </button>
+          )}
+        </div>
         <label>
           Min amount
           <input

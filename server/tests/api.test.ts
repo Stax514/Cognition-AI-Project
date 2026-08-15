@@ -234,6 +234,30 @@ describe('refund creation', () => {
       .expect(400);
   });
 
+  it('refuses to refund more than the transaction has left', async () => {
+    const agent = await login('agent@example.com');
+    const candidate = await query<{ id: number; remaining: number }>(
+      `SELECT t.id,
+              t.amount_cents - coalesce(
+                (SELECT sum(r.amount_cents) FROM refunds r
+                  WHERE r.transaction_id = t.id AND r.status <> 'rejected'), 0)::bigint AS remaining
+         FROM transactions t
+        ORDER BY remaining DESC
+        LIMIT 1`,
+    );
+    const { id, remaining } = candidate.rows[0]!;
+    expect(remaining).toBeGreaterThan(100);
+
+    await agent
+      .post('/api/refunds')
+      .send({ transactionId: id, amountCents: remaining, reason: 'duplicate' })
+      .expect(201);
+    await agent
+      .post('/api/refunds')
+      .send({ transactionId: id, amountCents: 100, reason: 'duplicate' })
+      .expect(400);
+  });
+
   it('records a creation entry in the audit log', async () => {
     const agent = await login('agent@example.com');
     const created = await agent

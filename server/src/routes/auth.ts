@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { randomUUID } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import { query } from '../db.js';
 import { clientIp } from '../http.js';
@@ -10,6 +11,11 @@ import { loginSchema } from '../validators.js';
 import type { Role } from '../types.js';
 
 export const authRouter = Router();
+
+// Unknown emails are compared against this real hash so that they cost the same
+// bcrypt work as a known account. bcrypt rejects anything that is not a valid
+// 60 character hash immediately, which would leak the difference in timing.
+const DUMMY_PASSWORD_HASH = bcrypt.hashSync(randomUUID(), 10);
 
 authRouter.post('/login', validate('body', loginSchema), async (req, res, next) => {
   try {
@@ -23,9 +29,7 @@ authRouter.post('/login', validate('body', loginSchema), async (req, res, next) 
     }>('SELECT id, email, name, role, password_hash FROM users WHERE email = $1', [email]);
 
     const user = result.rows[0];
-    // Compare against a dummy hash when the user is unknown so that a missing
-    // account and a wrong password take a similar amount of time.
-    const hash = user?.password_hash ?? '$2a$10$invalidinvalidinvalidinvalidinvalidinvalidinvalidinvalidin';
+    const hash = user?.password_hash ?? DUMMY_PASSWORD_HASH;
     const ok = await bcrypt.compare(password, hash);
     if (!user || !ok) {
       throw new HttpError(401, 'Invalid email or password');

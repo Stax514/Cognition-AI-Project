@@ -11,7 +11,11 @@ import './types.js';
 export function createApp() {
   const app = express();
 
-  app.set('trust proxy', 1);
+  // Only trust X-Forwarded-For when a reverse proxy really is in front,
+  // otherwise a client could choose the IP written to the audit log.
+  if (config.trustProxy) {
+    app.set('trust proxy', config.trustProxy);
+  }
   app.use(express.json({ limit: '100kb' }));
   app.use(cors({ origin: config.corsOrigin, credentials: true }));
   app.use(

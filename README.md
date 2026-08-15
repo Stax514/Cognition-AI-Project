@@ -176,7 +176,13 @@ raise refunds; nobody can decide their own.
 
 Audit rows are written for logins, logouts, refund creation and every decision,
 each with actor, action, refund id, old and new status, comment, client IP and
-timestamp.
+timestamp. The IP comes from the socket unless `TRUST_PROXY` is set to the
+number of reverse proxy hops in front of the API, so a client cannot choose the
+address recorded against it by sending `X-Forwarded-For`.
+
+**Refund amounts.** Creating a refund locks the transaction row and sums the
+non-rejected refunds already raised against it, so a payment cannot be refunded
+for more than it was worth, even under concurrent requests.
 
 **Injection.** Every query is parameterized; filters are assembled as `$n`
 placeholders and the only interpolated fragment is the sort column, taken from

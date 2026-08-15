@@ -211,12 +211,20 @@ export interface CreateRefundInput {
   note?: string;
 }
 
+// Arbitrary namespace so refund locks cannot collide with other advisory locks.
+const REFUND_LOCK_NAMESPACE = 4711;
+
 export async function createRefund(
   input: CreateRefundInput,
   actor: SessionUser,
   ip: string | null,
 ): Promise<Refund> {
   const id = await withTransaction(async (client) => {
+    // Serialise concurrent refunds against the same payment so the total below
+    // cannot be read stale. An advisory lock is used rather than SELECT FOR
+    // UPDATE because the API role only holds SELECT on transactions.
+    await client.query('SELECT pg_advisory_xact_lock($1, $2)', [REFUND_LOCK_NAMESPACE, input.transactionId]);
+
     const transaction = await client.query<{ customer_id: number; amount_cents: number }>(
       'SELECT customer_id, amount_cents FROM transactions WHERE id = $1',
       [input.transactionId],
@@ -225,8 +233,23 @@ export async function createRefund(
     if (!row) {
       throw new HttpError(404, 'Transaction not found');
     }
-    if (input.amountCents > row.amount_cents) {
-      throw new HttpError(400, 'Refund amount exceeds the transaction amount');
+
+    // Rejected refunds free their amount up again; pending and approved ones
+    // still count against the original charge.
+    const outstanding = await client.query<{ total: number }>(
+      `SELECT coalesce(sum(amount_cents), 0)::bigint AS total
+         FROM refunds
+        WHERE transaction_id = $1 AND status <> 'rejected'`,
+      [input.transactionId],
+    );
+    const alreadyRefunded = outstanding.rows[0]?.total ?? 0;
+    if (alreadyRefunded + input.amountCents > row.amount_cents) {
+      throw new HttpError(
+        400,
+        `Refund amount exceeds the amount still refundable on this transaction (${
+          row.amount_cents - alreadyRefunded
+        } cents)`,
+      );
     }
 
     const inserted = await client.query<{ id: number }>(

@@ -117,11 +117,24 @@ async function main(): Promise<void> {
       transactionsByCustomer.set(customerId, list);
     }
 
+    // Refunds never sum to more than the transaction they belong to, the same
+    // invariant the API enforces when a refund is raised.
+    const refundable = new Map<number, number>();
+
     for (const status of STATUS_MIX) {
       const customerId = pick(customerIds);
-      const transaction = pick(transactionsByCustomer.get(customerId)!);
+      const candidates = transactionsByCustomer.get(customerId)!;
+      let transaction = pick(candidates);
+      let remaining = refundable.get(transaction.id) ?? transaction.amountCents;
+      for (let attempt = 0; remaining < 100 && attempt < 10; attempt += 1) {
+        transaction = pick(candidates);
+        remaining = refundable.get(transaction.id) ?? transaction.amountCents;
+      }
+      if (remaining < 100) continue;
+
       const reason: RefundReason = pick(REFUND_REASONS);
-      const amountCents = Math.max(100, Math.round(transaction.amountCents * (random() < 0.3 ? 1 : random())));
+      const amountCents = random() < 0.3 ? remaining : Math.max(100, Math.round(remaining * random()));
+      refundable.set(transaction.id, remaining - amountCents);
       const createdAt = daysAgo(randomInt(0, 360));
       // A slice of the pending queue is raised by the approver, so the
       // maker-checker rule is visible in the UI without creating data first.
@@ -165,8 +178,9 @@ async function main(): Promise<void> {
     }
 
     await client.query('COMMIT');
+    const seeded = await client.query<{ count: number }>('SELECT count(*)::bigint AS count FROM refunds');
     console.log(
-      `Seeded ${customerIds.length} customers and ${STATUS_MIX.length} refunds. ` +
+      `Seeded ${customerIds.length} customers and ${seeded.rows[0]!.count} refunds. ` +
         `Log in as viewer@example.com / agent@example.com / approver@example.com with the seed password.`,
     );
   } catch (error) {

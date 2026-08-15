@@ -21,6 +21,8 @@ export const config = {
   databaseUrl: required('DATABASE_URL'),
   adminDatabaseUrl: required('ADMIN_DATABASE_URL'),
   corsOrigin: process.env.CORS_ORIGIN ?? 'http://localhost:5173',
+  // Number of reverse proxy hops in front of the API; 0 means none.
+  trustProxy: Number(process.env.TRUST_PROXY ?? 0),
   sessionSecret: required('SESSION_SECRET', 'dev-only-insecure-session-secret'),
   seedPassword: process.env.SEED_PASSWORD ?? 'Password123!',
 };

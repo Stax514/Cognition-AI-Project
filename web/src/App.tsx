@@ -22,9 +22,16 @@ export function App() {
   }, []);
 
   async function handleLogout() {
-    await api.logout();
-    setUser(null);
-    navigate('/login');
+    // Sign the user out locally even if the call fails: the session may already
+    // have expired, and leaving them on a signed-in view is worse.
+    try {
+      await api.logout();
+    } catch {
+      // Ignored: the session is gone either way.
+    } finally {
+      setUser(null);
+      navigate('/login');
+    }
   }
 
   if (loading) {

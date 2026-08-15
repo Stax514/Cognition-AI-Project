@@ -12,10 +12,6 @@ interface Props {
 // rejects with a generic error. Bound the field and check it here instead.
 const MIN_DATE = '2000-01-01';
 const MAX_DATE = new Date().toISOString().slice(0, 10);
-// A native date input reports a complete value as soon as the segment the user
-// is editing is filled, so typing 20 emits the 2nd first. Wait for a pause
-// before reloading the list, and apply immediately on blur.
-const COMMIT_DELAY_MS = 600;
 
 function dateError(value: string): string | null {
   if (!value) return null;
@@ -41,14 +37,16 @@ export function FiltersBar({ filters, onChange, onReset }: Props) {
     to: null,
   });
 
-  const pendingCommit = useRef<number | undefined>(undefined);
+  // A native date input reports a value as soon as the segment being typed is
+  // full, so `20` arrives as `02` first. Keyboard edits are therefore applied
+  // when the field is left (or on Enter); a change with no keystroke behind it
+  // came from the calendar widget and is applied straight away.
+  const typing = useRef(false);
 
   useEffect(() => {
     setDates({ from: filters.dateFrom, to: filters.dateTo });
     setErrors({ from: null, to: null });
   }, [filters.dateFrom, filters.dateTo]);
-
-  useEffect(() => () => window.clearTimeout(pendingCommit.current), []);
 
   function toggle<T extends string>(list: T[], value: T): T[] {
     return list.includes(value) ? list.filter((item) => item !== value) : [...list, value];
@@ -64,7 +62,6 @@ export function FiltersBar({ filters, onChange, onReset }: Props) {
   }
 
   function commit(field: 'from' | 'to', value: string) {
-    window.clearTimeout(pendingCommit.current);
     const current = field === 'from' ? filters.dateFrom : filters.dateTo;
     if (value === current) return;
     onChange(field === 'from' ? { dateFrom: value, page: 1 } : { dateTo: value, page: 1 });
@@ -75,19 +72,18 @@ export function FiltersBar({ filters, onChange, onReset }: Props) {
     const message = errorFor(field, value);
     setErrors((current) => ({ ...current, [field]: message }));
 
-    window.clearTimeout(pendingCommit.current);
-    if (!message) {
-      pendingCommit.current = window.setTimeout(() => commit(field, value), COMMIT_DELAY_MS);
+    if (!message && !typing.current) {
+      commit(field, value);
     }
   }
 
-  function blurDate(field: 'from' | 'to') {
+  /** Applies the field's value, if it is usable. Called on blur and on Enter. */
+  function applyDate(field: 'from' | 'to') {
+    typing.current = false;
     const value = dates[field];
-    if (errorFor(field, value)) {
-      window.clearTimeout(pendingCommit.current);
-      return;
+    if (!errorFor(field, value)) {
+      commit(field, value);
     }
-    commit(field, value);
   }
 
   return (
@@ -102,8 +98,11 @@ export function FiltersBar({ filters, onChange, onReset }: Props) {
             value={dates.from}
             aria-invalid={errors.from ? true : undefined}
             onChange={(event) => changeDate('from', event.target.value)}
-            onBlur={() => blurDate('from')}
-            onKeyDown={(event) => event.key === 'Enter' && blurDate('from')}
+            onBlur={() => applyDate('from')}
+            onKeyDown={(event) => {
+              typing.current = true;
+              if (event.key === 'Enter') applyDate('from');
+            }}
           />
           {errors.from && <span className="field-error">{errors.from}</span>}
         </label>
@@ -116,8 +115,11 @@ export function FiltersBar({ filters, onChange, onReset }: Props) {
             value={dates.to}
             aria-invalid={errors.to ? true : undefined}
             onChange={(event) => changeDate('to', event.target.value)}
-            onBlur={() => blurDate('to')}
-            onKeyDown={(event) => event.key === 'Enter' && blurDate('to')}
+            onBlur={() => applyDate('to')}
+            onKeyDown={(event) => {
+              typing.current = true;
+              if (event.key === 'Enter') applyDate('to');
+            }}
           />
           {errors.to && <span className="field-error">{errors.to}</span>}
         </label>

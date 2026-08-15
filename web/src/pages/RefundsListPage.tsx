@@ -109,6 +109,7 @@ export function RefundsListPage({ user }: { user: User }) {
               <th>Reason</th>
               <th>Status</th>
               <th>Raised by</th>
+              <th>Decided by</th>
             </tr>
           </thead>
           <tbody>
@@ -126,11 +127,12 @@ export function RefundsListPage({ user }: { user: User }) {
                   <StatusBadge status={refund.status} />
                 </td>
                 <td>{refund.createdBy.name}</td>
+                <td>{refund.decidedBy ? refund.decidedBy.name : <span className="muted">—</span>}</td>
               </tr>
             ))}
             {!loading && data?.rows.length === 0 && (
               <tr>
-                <td colSpan={8} className="empty">
+                <td colSpan={9} className="empty">
                   No refunds match these filters.
                 </td>
               </tr>

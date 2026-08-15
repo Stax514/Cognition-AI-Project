@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { REFUND_REASONS, REFUND_STATUSES, humanise } from '../types';
 import type { RefundFilters, RefundReason, RefundStatus } from '../types';
 
@@ -12,6 +12,10 @@ interface Props {
 // rejects with a generic error. Bound the field and check it here instead.
 const MIN_DATE = '2000-01-01';
 const MAX_DATE = new Date().toISOString().slice(0, 10);
+// A native date input reports a complete value as soon as the segment the user
+// is editing is filled, so typing 20 emits the 2nd first. Wait for a pause
+// before reloading the list, and apply immediately on blur.
+const COMMIT_DELAY_MS = 600;
 
 function dateError(value: string): string | null {
   if (!value) return null;
@@ -37,10 +41,14 @@ export function FiltersBar({ filters, onChange, onReset }: Props) {
     to: null,
   });
 
+  const pendingCommit = useRef<number | undefined>(undefined);
+
   useEffect(() => {
     setDates({ from: filters.dateFrom, to: filters.dateTo });
     setErrors({ from: null, to: null });
   }, [filters.dateFrom, filters.dateTo]);
+
+  useEffect(() => () => window.clearTimeout(pendingCommit.current), []);
 
   function toggle<T extends string>(list: T[], value: T): T[] {
     return list.includes(value) ? list.filter((item) => item !== value) : [...list, value];
@@ -56,6 +64,9 @@ export function FiltersBar({ filters, onChange, onReset }: Props) {
   }
 
   function commit(field: 'from' | 'to', value: string) {
+    window.clearTimeout(pendingCommit.current);
+    const current = field === 'from' ? filters.dateFrom : filters.dateTo;
+    if (value === current) return;
     onChange(field === 'from' ? { dateFrom: value, page: 1 } : { dateTo: value, page: 1 });
   }
 
@@ -64,20 +75,19 @@ export function FiltersBar({ filters, onChange, onReset }: Props) {
     const message = errorFor(field, value);
     setErrors((current) => ({ ...current, [field]: message }));
 
-    // A complete date is applied straight away, but an emptied field waits for
-    // blur: clearing is the first keystroke of retyping a date, and reloading
-    // the whole unfiltered list mid-edit is jarring.
-    if (!message && value) {
-      commit(field, value);
+    window.clearTimeout(pendingCommit.current);
+    if (!message) {
+      pendingCommit.current = window.setTimeout(() => commit(field, value), COMMIT_DELAY_MS);
     }
   }
 
   function blurDate(field: 'from' | 'to') {
     const value = dates[field];
-    const current = field === 'from' ? filters.dateFrom : filters.dateTo;
-    if (!errorFor(field, value) && value !== current) {
-      commit(field, value);
+    if (errorFor(field, value)) {
+      window.clearTimeout(pendingCommit.current);
+      return;
     }
+    commit(field, value);
   }
 
   return (
@@ -93,6 +103,7 @@ export function FiltersBar({ filters, onChange, onReset }: Props) {
             aria-invalid={errors.from ? true : undefined}
             onChange={(event) => changeDate('from', event.target.value)}
             onBlur={() => blurDate('from')}
+            onKeyDown={(event) => event.key === 'Enter' && blurDate('from')}
           />
           {errors.from && <span className="field-error">{errors.from}</span>}
         </label>
@@ -106,6 +117,7 @@ export function FiltersBar({ filters, onChange, onReset }: Props) {
             aria-invalid={errors.to ? true : undefined}
             onChange={(event) => changeDate('to', event.target.value)}
             onBlur={() => blurDate('to')}
+            onKeyDown={(event) => event.key === 'Enter' && blurDate('to')}
           />
           {errors.to && <span className="field-error">{errors.to}</span>}
         </label>

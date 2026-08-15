@@ -136,6 +136,23 @@ body {
   align-items: flex-end;
 }
 
+/* The row reserves space below so an inline date error can be taken out of the
+   flow, otherwise the invalid field rides up above its neighbours. */
+.filters .filter-row:first-child {
+  margin-bottom: 30px;
+}
+
+.filters .date-fields label {
+  position: relative;
+}
+
+.filters .field-error {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+}
+
 label {
   display: flex;
   flex-direction: column;

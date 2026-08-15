@@ -139,7 +139,7 @@ body {
 /* The row reserves space below so an inline date error can be taken out of the
    flow, otherwise the invalid field rides up above its neighbours. */
 .filters .filter-row:first-child {
-  margin-bottom: 30px;
+  margin-bottom: 34px;
 }
 
 .filters .date-fields label {
@@ -151,6 +151,8 @@ body {
   top: 100%;
   left: 0;
   margin-top: 4px;
+  width: max-content;
+  max-width: 360px;
 }
 
 label {
